@@ -4,18 +4,27 @@
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
+#include "DebouncedIn.h"
 
 DigitalOut led1(LED1);
 DigitalOut led2(LED2);
 DigitalOut led3(LED3);
 DigitalOut led4(LED4);
-BusIn joy (p15,p12,p13,p16,p14);
+
+DebouncedIn joy_UP(p15); //switch
+DebouncedIn joy_DOWN(p12);
+DebouncedIn joy_LEFT(p13);
+DebouncedIn joy_RIGHT(p16);
+DebouncedIn joy_OK(p14);
+//BusIn joy (p12,p13,p16,p14);
+
 C12832 lcd(p5,p7,p6,p8,p11);
 QueueHandle_t xQueue;
+QueueHandle_t xQueue_LCD;
 void initialize_led();
 int iPosition=0;
 
-enum key_pressed_t {
+typedef enum key_pressed_t {
 NONE=0,
 LEFT,
 RIGHT,
@@ -24,7 +33,7 @@ DOWN,
 OK
 };
 
-enum fsm_state_t {
+typedef enum fsm_state_t {
 TEMPERATURE=1,
 QUADRATIC,
 RGB
@@ -33,189 +42,221 @@ RGB
 void Task1 (void* pvParameters) // sender (toma el teclado como input y lo coloca en la cola. en base a eso se seleccionara la tarea siguiente)
 {
 
-    key_pressed_t key_pressed, prev_key_pressed=NONE;
+    key_pressed_t key_pressed;
     BaseType_t xStatus;
-    
+    int value;
     (void) pvParameters;
-    
     for (;;) {
-        //if (key_pressed!=prev_key_pressed)
-                
-        switch (joy)
+
+        if (joy_UP.rising())
         {
-             case 0:
-             //lcd.printf("UP");
-             if (key_pressed!=NONE)
-            {
-                xStatus=xQueueSendToBack(xQueue,(void *)&key_pressed,0);
-                if (xStatus!=pdPASS) printf("Could not send to queue. \r\n");
-            }
-             key_pressed = NONE;             
-
-
-             break;
-    
-             case 1:
-             //lcd.printf("UP");
-             key_pressed = UP;             
-             break;
-             case 2:
-             key_pressed=DOWN;
-             
-             //lcd.printf("DOWN");
-             break;
-             case 4:  //left
-             key_pressed=LEFT;
-             
-             break;
-             case 8: //right
-             key_pressed=RIGHT;
-            
-             break;
-             case 16:
-             key_pressed=OK;             
-             break;
-        //led1 = !led1;
-        //printf("Task1\n");
-        //vTaskDelay(500);
+            key_pressed = key_pressed_t::UP;
+            xStatus=xQueueSendToBack(xQueue,(void *)&key_pressed,0);
+            printf("UP\r\n");
+            if (xStatus!=pdPASS) printf("Could not send to queue. \r\n\r\n");
         }
-        printf("Aprete: %d",key_pressed);
-        vTaskDelay(30);
-
-    
-    }
+            
+        if (joy_DOWN.rising())
+        {
+            key_pressed = key_pressed_t::DOWN;
+            xStatus=xQueueSendToBack(xQueue,(void *)&key_pressed,0);
+            printf("DOWN\r\n");
+            if (xStatus!=pdPASS) printf("Could not send to queue. \r\n");
+        } 
+        if (joy_LEFT.rising())
+        {
+            key_pressed = key_pressed_t::LEFT;
+            xStatus=xQueueSendToBack(xQueue,(void *)&key_pressed,0);
+            printf("LEFT\r\n");
+            if (xStatus!=pdPASS) printf("Could not send to queue. \r\n\r\n");
+        } 
+        if (joy_RIGHT.rising())
+        {
+            key_pressed = key_pressed_t::RIGHT;
+            xStatus=xQueueSendToBack(xQueue,(void *)&key_pressed,0);
+            printf("RIGHT\r\n");
+            if (xStatus!=pdPASS) printf("Could not send to queue. \r\n");
+        }
+        if (joy_OK.rising())
+        {
+            key_pressed = key_pressed_t::OK;
+            xStatus=xQueueSendToBack(xQueue,(void *)&key_pressed,0);
+            printf("OK\r\n");
+            if (xStatus!=pdPASS) printf("Could not send to queue. \r\n");
+        }        
+    vTaskDelay(100);
+    } 
 }
 void Task2 (void* pvParameters) //receiver - state machine
 {
     key_pressed_t key_pressed;
-    fsm_state_t state;
+    fsm_state_t state,prev_state;
     const TickType_t xCycleFrequency = pdMS_TO_TICKS( 100UL );
     BaseType_t xStatus;
 
-
+  int len;
+   
     state = TEMPERATURE;
+    xStatus=xQueueSendToBack(xQueue_LCD,(void *)&state,0);
+    if (xStatus!=pdPASS) printf("Could not send to queue. \r\n");
+    prev_state = TEMPERATURE;
     
     (void) pvParameters;
     for (;;) {
-     lcd.cls();
-     lcd.locate(0,15);
-     lcd.printf ("STATE: %c",state);
-    if (uxQueueMessagesWaiting (xQueue)!=0)
-    {
-        lcd.printf("Queue should have been empty!\r\n"); 
-    }
-   xStatus = xQueueReceive (xQueue, (void *)&key_pressed, xCycleFrequency);
+     
+    // if (uxQueueMessagesWaiting (xQueue)!=0)
+    // {
+        // lcd.printf("Queue should have been empty!\r\n"); 
+    // }
+    // char strLCD[100];
+        len  = (int)uxQueueSpacesAvailable(xQueue);
+
+        // printf("task2 len=%d\r\n",len);
+   
+   xStatus = xQueueGenericReceive(xQueue, (void *)&key_pressed, xCycleFrequency,pdFALSE);
    if (xStatus==pdPASS)
    {
-    
+     printf("TASK 2 - entro dato al queue\r\n");  
       switch (state)  // TEMP<->QUAD<->RGB
         {
-             case TEMPERATURE:
-                 if (key_pressed == LEFT )
+             case fsm_state_t::TEMPERATURE:
+             {
+                 if (key_pressed == key_pressed_t::LEFT )
                  {  
-                     state = RGB;
+                     state = fsm_state_t::RGB;
                  }
-                 else if ( key_pressed == RIGHT)
+                 else if ( key_pressed == key_pressed_t::RIGHT)
                  {
-                     state = QUADRATIC;
+                     state = fsm_state_t::QUADRATIC;
                  }
                  else
                  {
-                    state = TEMPERATURE;
-                    /* code */
+                    state = fsm_state_t::TEMPERATURE;
                  }
-            case QUADRATIC:
-                 if (key_pressed == LEFT )
+            }
+            break;
+            case fsm_state_t::QUADRATIC:
+            {
+                 if (key_pressed == key_pressed_t::LEFT )
                  {  
-                     state = TEMPERATURE;
+                     state = fsm_state_t::TEMPERATURE;
                  }
-                 else if ( key_pressed == RIGHT)
+                 else if ( key_pressed == key_pressed_t::RIGHT)
                  {
-                     state = RGB;
+                     state = fsm_state_t::RGB;
                  }
                  else
                  {
-                    state = QUADRATIC;
+                    state = fsm_state_t::QUADRATIC;
                     /* code */
                  }           
+             }
              break;
-             case RGB:
-             if (key_pressed == LEFT )
+             case fsm_state_t::RGB:
+             {
+                if (key_pressed == key_pressed_t::LEFT )
                  {  
-                     state = QUADRATIC;
+                     state = fsm_state_t::QUADRATIC;
                  }
-                 else if ( key_pressed == RIGHT)
+                 else if ( key_pressed == key_pressed_t::RIGHT)
                  {
-                     state = TEMPERATURE;
+                     state = fsm_state_t::TEMPERATURE;
                  }
                  else
                  {
-                    state = RGB;
+                    state = fsm_state_t::RGB;
                     /* code */
                  }
+             }
              break;  
 
              default:
+            {
                 state = TEMPERATURE;
+            }
              break;           
+        
+
         }
+        if(prev_state=state){
+         xStatus=xQueueSendToBack(xQueue_LCD,(void *)&state,0);
+            if (xStatus!=pdPASS) printf("Could not send to queue.\r\n");
+            printf("envio al LCDDDDDDDDDDD\r\n");
+
+        }
+        
+        prev_state=state;
+
       }
+    //   printf("Estado %d\r\n",(char)state);
      //   led2= !led2;
      //   printf("Task2\n");
-     //   vTaskDelay(1000);
+       vTaskDelay(100);
     }
 }
 void Task3 (void* pvParameters) //Menu printer
 {
-    (void) pvParameters;                    // Just to stop compiler warnings.
-    /*int state;
-    
-    char cMainmenuarray[3][20]={	
-	"Temperature",			
-	"Quadratic Signal",		
-	"RGB",	
-    };
+    fsm_state_t state;
+    const TickType_t xCycleFrequency = pdMS_TO_TICKS( 100UL );
+    BaseType_t xStatus;
+    int len;
+    // char strLCD[100];
     for (;;) {
-    
-    switch (state)
-         {
-             case 1:
-             //lcd.printf("UP");
-             key_pressed=UP;
-             break;
-             case 2:
-             key_pressed=DOWN;
-             //lcd.printf("DOWN");
-             break;
-             case 4:  //left
-             key_pressed=LEFT;
-               if (iPosition==0) 
-               iPosition=sizeof(cMainmenuarray)/sizeof(cMainmenuarray[0])-1; //5limite der, reset scroll
-               else iPosition--;
-               lcd.cls();
-               lcd.printf(cMainmenuarray[iPosition]);
-               lcd.locate(0,15);
-             break;
-             case 8: //right
-             key_pressed=RIGHT;
-               if (iPosition==sizeof(cMainmenuarray)/sizeof(cMainmenuarray[0])-1) 
-               iPosition=0; //limite izq, reset scroll
-               else iPosition++; 
-               lcd.cls();           
-               lcd.printf(cMainmenuarray[iPosition]);
-               lcd.locate(0,15);
-             break;
-             case 16:
-             key_pressed=OK;
-             break;
-         }
-     
-        //led3= !led3;
-        //printf("Task3\n");
-        //vTaskDelay(1500);
-    
-    }*/
+        len  = (int)uxQueueSpacesAvailable(xQueue_LCD);
+
+        printf("task3\r\n");
+        
+        xStatus = xQueueGenericReceive(xQueue_LCD, (void *)&state, xCycleFrequency,pdFALSE);
+        if (xStatus==pdPASS)
+        {
+            
+            switch (state)
+            {
+            case fsm_state_t::TEMPERATURE: 
+            {
+            //    lcd.cls();
+            //    //iMMenu_position=0;
+            //    lcd.locate(0,3);
+            //    lcd.printf("Temperature Screen");
+            //    wait(0.1);
+            //    lcd.locate(0,15);
+            printf("task3 - temp\r\n");
+            }
+            break;
+
+            case fsm_state_t::QUADRATIC: 
+            {
+            //     lcd.cls();
+            //     //iMMenu_position=0;
+            //     lcd.locate(0,15);
+            //     lcd.printf("QUADRATIC Screen");
+            //     lcd.locate(0,15);
+            printf("task3 - quad\r\n");
+            }
+            break;
+
+            case fsm_state_t::RGB: 
+            {
+            //     lcd.cls();
+            //     //iMMenu_position=0;
+            //     lcd.locate(0,15);
+            //     lcd.printf("RGB Screen");
+            //     lcd.locate(0,15);
+            printf("task3 - rgb\r\n");
+            }
+            break;
+
+            default:
+                break;
+            }
+
+        }
+
+        vTaskDelay(250);
+    }
 }
+
+
 void Task4 (void* pvParameters)
 {
     (void) pvParameters;                    // Just to stop compiler warnings.
@@ -244,15 +285,16 @@ void initialize_led()
 
 int main (void)
 {
-    xQueue = xQueueCreate(50,sizeof(int));
-    initialize_led();
+    xQueue = xQueueCreate(10,sizeof(key_pressed_t));
+    xQueue_LCD = xQueueCreate(10,sizeof(fsm_state_t));
+    // initialize_led();
     xTaskCreate( Task1, ( const char * ) "Task1", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, ( xTaskHandle * ) NULL );
-    // xTaskCreate( Task2, ( const char * ) "Task2", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, ( xTaskHandle * ) NULL );
-    //xTaskCreate( Task3, ( const char * ) "Task3", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, ( xTaskHandle * ) NULL );
+    xTaskCreate( Task2, ( const char * ) "Task2", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY+1, ( xTaskHandle * ) NULL );
+    xTaskCreate( Task3, ( const char * ) "Task3", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, ( xTaskHandle * ) NULL );
     //xTaskCreate( Task4, ( const char * ) "Task4", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, ( xTaskHandle * ) NULL );
     vTaskStartScheduler();
    //should never get here
    
-   printf("ERORR: vTaskStartScheduler returned!");
+   printf("ERORR: vTaskStartScheduler returned!\r\n");
    for (;;);
 }

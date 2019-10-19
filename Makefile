@@ -60,6 +60,8 @@ OBJECTS += C12832/C12832.o
 OBJECTS += C12832/GraphicsDisplay.o
 OBJECTS += C12832/TextDisplay.o
 
+OBJECTS += DebouncedIn/DebouncedIn.o
+OBJECTS += DebouncedIn/DebouncedIn.o
 
 
  SYS_OBJECTS += mbed/TARGET_LPC1768/TOOLCHAIN_GCC_ARM/board.o
@@ -67,7 +69,6 @@ OBJECTS += C12832/TextDisplay.o
  SYS_OBJECTS += mbed/TARGET_LPC1768/TOOLCHAIN_GCC_ARM/retarget.o
  SYS_OBJECTS += mbed/TARGET_LPC1768/TOOLCHAIN_GCC_ARM/startup_LPC17xx.o
  SYS_OBJECTS += mbed/TARGET_LPC1768/TOOLCHAIN_GCC_ARM/system_LPC17xx.o
-
 
 INCLUDE_PATHS += -I../
 INCLUDE_PATHS += -I../.
@@ -83,6 +84,7 @@ INCLUDE_PATHS += -I../mbed/TARGET_LPC1768
 INCLUDE_PATHS += -I../mbed/TARGET_LPC1768/TARGET_NXP/TARGET_LPC176X
 INCLUDE_PATHS += -I../mbed/TARGET_LPC1768/TARGET_NXP/TARGET_LPC176X/TARGET_MBED_LPC1768
 INCLUDE_PATHS += -I../C12832
+INCLUDE_PATHS += -I../DebouncedIn
 
 LIBRARY_PATHS := -L../mbed/TARGET_LPC1768/TOOLCHAIN_GCC_ARM 
 LIBRARIES := -lmbed 
@@ -365,6 +367,7 @@ $(PROJECT).bin: $(PROJECT).elf
 	$(ELF2BIN) -O binary $< $@
 	+@echo "===== bin file ready to flash: $(OBJDIR)/$@ =====" 
 	cp $@ /media/mechenique/MBED
+	sync
 $(PROJECT).hex: $(PROJECT).elf
 	$(ELF2BIN) -O ihex $< $@
 
